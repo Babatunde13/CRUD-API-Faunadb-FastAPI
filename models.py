@@ -23,13 +23,13 @@ class User:
                 {'data': data}
             )
         )
-        new_data['data']['id'] = new_data['@ref'].split('/')[2]
+        new_data['data']['id'] = new_data['ref'].value['id']
         return new_data['data']
 
     def get_user(self, id):
         user = client.query(
             q.get(
-                q.ref(self.collection, id)
+                q.ref(q.collection('users'), id)
             )
         )
         return user['data']
@@ -58,7 +58,7 @@ class Todo:
                 {'data': data}
             )
         )
-        new_todo['data']['id'] = new_todo['@ref'].split('/')[2]
+        new_todo['data']['id'] = new_todo['ref'].value['id']
         user_todos = client.query(
             q.get(
                 q.ref(self.collection, user_id)
@@ -112,11 +112,3 @@ class Todo:
 
     def __repr__(self) -> str:
         f''
-
-user = User().create_user({
-    'name': 'Babatunde Koiki',
-    'password': 'nifeaccumu'
-})
-
-print(user)
-print(User().get_user('288695647436014087'))
