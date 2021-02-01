@@ -55,57 +55,36 @@ class Todo:
         new_todo = client.query(
             q.create(
                 self.collection,
-                {'data': data}
+                {'data': {**data, 'user_id': user_id}}
             )
         )
-        new_todo['data']['id'] = new_todo['ref'].value['id']
-        user_todos = client.query(
-            q.get(
-                q.ref(self.collection, user_id)
-            )
-        )['data']['todos']
-        todo_data = {'todo_ids': [*user_todos, new_todo['data']['id']]} if user_todos \
-                else {'todo_ids': [new_todo['data']['id']]}
-        client.query(
-            q.update(
-                q.ref(self.collection, user_id),
-                todo_data
-            )
-        )
+         
         return new_todo
 
-    def get_todo(self, user_id, id):
+    def get_todo(self, id):
         return client.query(
             q.get(
-                q.ref(self.collection, user_id)
+                q.ref(self.collection, id)
             )
         )
-
+ 
     def get_todos(self, user_id):
-        user_todos = client.query(
-            q.get(
-                q.ref(self.collection, user_id)
-            )
-        )['data']['todos']
-        todos = client.query(
-            [
-                q.get(q.ref(self.collection, todo_id))
-            ] for todo_id in user_todos
-        )
-        return todos
+        return client.query(
+            q.get(q.match(q.index('todo_by_user_id'), user_id))
+        ) 
 
-    def update_todo(self, id, user_id, data):
+    def update_todo(self, id, data):
         return client.query(
             q.update(
-                q.ref(self.collection, user_id),
+                q.ref(self.collection, id),
                 {'data': data}
             )
         )['data']
 
-    def delete_todo(self, user_id):
+    def delete_todo(self, id):
         data = client.query(
             q.delete(
-                q.ref(self.collection, user_id)
+                q.ref(self.collection, id)
             )
         )
         return data['data']
