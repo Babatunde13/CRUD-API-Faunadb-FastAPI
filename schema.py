@@ -1,3 +1,5 @@
+'''Schmea of all data received and sent back to the user'''
+
 from pydantic import BaseModel, Field
 from typing import Optional, List
 

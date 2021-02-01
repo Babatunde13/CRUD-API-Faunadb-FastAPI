@@ -1,44 +1,16 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status, Header, Query
-from models import *
+from fastapi.param_functions import Body
+import models
+from jose import jwt
+# import bcrypt, os
+
 from schema import *
 
+load_dotenv()
+
 app = FastAPI()
-
-data = [
-    {
-        'id': 1,
-        'fullname': 'Babatunde Koiki',
-        'email': 'kkkkk',
-        'token': '1',
-        'password': 'nife'
-    },
-    {
-        'id': 2,
-        'name': 'Bbaa Koiki',
-        'email': 'kkkaagkk'
-    },
-    {
-        'id': 3,
-        'name': 'Babatunde Ayo',
-        'email': 'asd'
-    },
-    {
-        'id': 4,
-        'name': 'Ayo Aina',
-        'email': 'aserg'
-    },
-    {
-        'id': 5,
-        'name': 'B Koiki',
-        'email': 'kkkkk'
-    },
-    {
-        'id': 6,
-        'name': 'A Koiki',
-        'email': 'kkkkk'
-    }
-]
-
+ 
 @app.post(
     '/users/create/', 
     response_model=UserOutputWithTodo, 
@@ -46,7 +18,11 @@ data = [
     status_code=status.HTTP_201_CREATED
 )
 async def create_user(user: UserInput):
-    print(user.fullname)
+    user.password = bcrypt.hashpw(user.password, bcrypt.gensalt())
+    try:
+        user = models.User().create_user(user.dict())
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
     return user
 
 @app.post(
@@ -55,29 +31,26 @@ async def create_user(user: UserInput):
     description='This route is for creating user accounts'
 )
 async def get_token(user: UserSignin):
+    user_data = models.User().get_user_by_email(user.email)
+    if user_data and bcrypt.checkpw(user.password, user_data['password']):
+        token = jwt.encode({'user': user_data}, key=os.getenv('SECRET_KEY'))
+        return token
     header = {'WWW-Authenticate': 'Basic'}
-    print(user.password)
-    for u in data:
-        if u['email'] == user.email:
-            if u['password'] == user.password:
-                return {'token': u['token']}
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, 
-                detail='Invalid email or password',
-                headers=header
-            )
     raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, 
                 detail='Invalid email or password',
                 headers=header
             )
 
-async def authorize(authorization):
-    if not authorization:
+async def authorize(authorization: str):
+    if not authorization or len(authorization.split(' ')) != 2 or\
+         authorization.split(' ')[0] != 'Bearer':
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, 
             detail='Token not passed'
         )
+    token = authorization.split(' ')[1]
+    return jwt.decode(token, key=os.getenv('SECRET_KEY'), algorithms=[ 'HS256'])
 
 @app.post(
     '/users/todo/',
@@ -91,11 +64,10 @@ async def create_todo(
         description='Authorization is in form of Bearer &lt;token&gt; where token is given in the /users/token/ endpoint'
     )
 ):
-    await authorize(Authorization)
-    d=todo.dict()
-    d.update({'creator': data[0]})
-    d['id'] = 1
-    return d
+    user = await authorize(Authorization)
+    todo = models.Todo().create_todo(user['id'], todo.dict())
+    todo['creator'] = user
+    return todo
 
 @app.get(
     '/users/todo/{todo_id}', 
@@ -108,19 +80,16 @@ async def get_todo(
         description='Authorization is in form of Bearer &lt;token&gt; where token is given in the /users/token/ endpoint'
     )
 ):
-    await authorize(Authorization)
-    # get todo based on id
-    todo = {
-        "name": "Go to market",
-        'id':1
-    }
-    todo.update({"creator": data[0]})
+    user = await authorize(Authorization)
+    todo = models.Todo().get_todo(todo_id)
+    if todo['user_id'] != user['id']:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    todo.update({"creator": user})
     return  todo
-    # pass
 
 @app.get(
     '/users/todos/', 
-    response_model= UserOutput,
+    response_model= UserOutputWithTodo,
     description='Get all Todos'
 )
 
@@ -143,11 +112,12 @@ async def get_all_todos(
                         'where token is given in the /users/token/ endpoint'
     )
 ):
-    await authorize(Authorization)
+    user = await authorize(Authorization)
     # get all todo
+    todos = models.Todo().get_todos(user['id'])
     # add user data
-    # return  todo
-    pass
+    user.update({'todos': todos})
+    return todos
 
 @app.put(
     '/users/todo/{todo_id}', 
@@ -155,16 +125,19 @@ async def get_all_todos(
 )
 async def update_todo(
     todo_id: str =Field(..., description='Id of the todo'),
+    data: Todo = Body(...),
     Authorization: str= Header(
         None, 
         description='Authorization is in form of Bearer &lt;token&gt; where token is given in the /users/token/ endpoint'
     )
 ):
-    await authorize(Authorization)
-    # get todo based on id
-    # update the todo
-    # return  todo
-    pass
+    user = await authorize(Authorization)
+    todo = models.Todo().get_todo(todo_id)
+    if todo['user_id'] != user['id']:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    todo = models.Todo().update_todo(todo_id, data)
+    todo.update({"creator": user})
+    return  todo
 
 @app.delete(
     '/users/todo/{todo_id}', 
@@ -177,8 +150,10 @@ async def delete_todo(
         description='Authorization is in form of Bearer &lt;token&gt; where token is given in the /users/token/ endpoint'
     )
 ):
-    await authorize(Authorization)
-    # get todo based on id
-    # delete todo
-    # return  todo
-    pass 
+    user = await authorize(Authorization)
+    todo = models.Todo().get_todo(todo_id)
+    if todo['user_id'] != user['id']:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    todo = models.Todo().delete_todo(todo_id)
+    todo.update({"creator": user})
+    return  todo

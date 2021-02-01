@@ -7,10 +7,9 @@ import os
 load_dotenv()
 
 client = FaunaClient(secret=os.getenv('FAUNA_SECRET'))
+# indexes = client.query(q.paginate(q.indexes()))
 
-indexes = client.query(q.paginate(q.indexes()))
-
-print(indexes)
+# print(indexes)
 
 class User:
     def __init__(self) -> None:
@@ -32,20 +31,13 @@ class User:
                 q.ref(q.collection('users'), id)
             )
         )
-        return user['data']
+        return None if user['errors'] else user['data']
 
-    def get_users(self):
-        pass
-
-    def update_user(id, data):
-        pass
-
-    def delete_user(self):
-        pass
-
-    def __repr__(self) -> str:
-        f''
-
+    def get_user_by_email(self, email):
+        user = client.query(
+            q.get(q.match(q.index('users_by_email'), email))
+        )
+        return None if user['errors'] else user['data']
 
 class Todo:
     def __init__(self) -> None:
@@ -62,16 +54,24 @@ class Todo:
         return new_todo
 
     def get_todo(self, id):
-        return client.query(
+        todo = client.query(
             q.get(
                 q.ref(self.collection, id)
             )
         )
+        return None if todo['errors'] else todo['data']
  
     def get_todos(self, user_id):
-        return client.query(
+        todos =  client.query(
             q.get(q.match(q.index('todo_by_user_id'), user_id))
         ) 
+        return [
+            {
+                'id': todo['id'], 
+                'name': todo['name'], 
+                'is_completed': todo['is_completed']
+            } for todo in todos
+        ]
 
     def update_todo(self, id, data):
         return client.query(
