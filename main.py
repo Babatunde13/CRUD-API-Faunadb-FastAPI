@@ -1,6 +1,5 @@
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, status, Header, Query
-from fastapi.param_functions import Body
+from fastapi import FastAPI, HTTPException, status, Header, Query, Body
 import models
 from jose import jwt
 # import bcrypt, os
