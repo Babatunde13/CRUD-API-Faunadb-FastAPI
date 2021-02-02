@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status, Header, Query, Body
 import models
 from jose import jwt
-# import bcrypt, os
+import bcrypt, os
 
 from schema import *
 
@@ -17,7 +17,7 @@ app = FastAPI()
     status_code=status.HTTP_201_CREATED
 )
 async def create_user(user: UserInput):
-    user.password = bcrypt.hashpw(user.password, bcrypt.gensalt())
+    user.password = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     try:
         user = models.User().create_user(user.dict())
     except Exception as e:
@@ -31,16 +31,21 @@ async def create_user(user: UserInput):
 )
 async def get_token(user: UserSignin):
     user_data = models.User().get_user_by_email(user.email)
-    if user_data and bcrypt.checkpw(user.password, user_data['password']):
+    if user_data and bcrypt.checkpw(
+                    user.password.encode('utf-8'), 
+                    user_data['password'].encode('utf-8')
+                ):
         token = jwt.encode({'user': user_data}, key=os.getenv('SECRET_KEY'))
-        return token
+        return {
+            'token': token
+        }
     header = {'WWW-Authenticate': 'Basic'}
     raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, 
                 detail='Invalid email or password',
                 headers=header
             )
-
+#JDJiJDEyJDJyZ2FQT0tzbFk2RVB3NFRFcW1SS3VDMXBJWUUvb0lRd2pCMUtoUEhVbU8wZndCeUdyYkN5
 async def authorize(authorization: str):
     if not authorization or len(authorization.split(' ')) != 2 or\
          authorization.split(' ')[0] != 'Bearer':

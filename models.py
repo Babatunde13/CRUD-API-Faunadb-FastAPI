@@ -2,6 +2,7 @@ from faunadb import query as q
 from faunadb.client import FaunaClient
 from faunadb.objects import Ref
 from dotenv  import load_dotenv
+from typing import Dict
 import os
 
 load_dotenv()
@@ -15,7 +16,7 @@ class User:
     def __init__(self) -> None:
         self.collection = q.collection('users')
 
-    def create_user(self, data):
+    def create_user(self, data) -> Dict[str, str]:
         new_data = client.query(
             q.create(
                 self.collection,
@@ -31,27 +32,27 @@ class User:
                 q.ref(q.collection('users'), id)
             )
         )
-        return None if user['errors'] else user['data']
+        return None if user.get('errors') else user['data']
 
     def get_user_by_email(self, email):
         user = client.query(
-            q.get(q.match(q.index('users_by_email'), email))
+            q.get(q.match(q.index('user_by_email'), email))
         )
-        return None if user['errors'] else user['data']
+        return None if user.get('errors') else user['data']
 
 class Todo:
     def __init__(self) -> None:
         self.collection = q.collection('todos')
 
-    def create_todo(self, user_id, data):
+    def create_todo(self, user_id, data) -> Dict[str, str]:
         new_todo = client.query(
             q.create(
                 self.collection,
                 {'data': {**data, 'user_id': user_id}}
             )
         )
-         
-        return new_todo
+        new_todo['data']['id']=new_todo['ref'].value['id']
+        return new_todo['data']
 
     def get_todo(self, id):
         todo = client.query(
@@ -59,9 +60,15 @@ class Todo:
                 q.ref(self.collection, id)
             )
         )
-        return None if todo['errors'] else todo['data']
+        return None if todo.get('errors') else todo['data']
  
     def get_todos(self, user_id):
+        # client.query(
+        #     q.map_(
+        #         q.paginate(q.match(q.index('todo_by_user_id'), user_id)),
+        #         q.lambda_('todo', q.get(q.var('todo')))
+        #     )
+        # )
         todos =  client.query(
             q.get(q.match(q.index('todo_by_user_id'), user_id))
         ) 
