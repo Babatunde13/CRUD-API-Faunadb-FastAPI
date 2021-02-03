@@ -1,8 +1,7 @@
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, status, Header, Query, Body
 import models
-from jose import jwt
-import bcrypt, os
+import bcrypt, os, jwt
 
 from schema import *
 
@@ -45,19 +44,24 @@ async def get_token(user: UserSignin):
                 detail='Invalid email or password',
                 headers=header
             )
-#JDJiJDEyJDJyZ2FQT0tzbFk2RVB3NFRFcW1SS3VDMXBJWUUvb0lRd2pCMUtoUEhVbU8wZndCeUdyYkN5
+ 
 async def authorize(authorization: str):
-    if not authorization or len(authorization.split(' ')) != 2 or\
-         authorization.split(' ')[0] != 'Bearer':
+    if not authorization:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, 
             detail='Token not passed'
         )
+    if len(authorization.split(' ')) != 2 or\
+         authorization.split(' ')[0] != 'Bearer':
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, 
+            detail='Invalid Token'
+        )
     token = authorization.split(' ')[1]
-    return jwt.decode(token, key=os.getenv('SECRET_KEY'), algorithms=[ 'HS256'])
+    return jwt.decode(token, key=os.getenv('SECRET_KEY'), algorithms=[ 'HS256'])['user']
 
 @app.post(
-    '/users/todo/',
+    '/users/todos/',
     response_model=TodoOutput, 
     status_code=status.HTTP_201_CREATED
 )
@@ -69,12 +73,15 @@ async def create_todo(
     )
 ):
     user = await authorize(Authorization)
-    todo = models.Todo().create_todo(user['id'], todo.dict())
+    try:
+        todo = models.Todo().create_todo(user['id'], todo.dict())
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
     todo['creator'] = user
     return todo
 
 @app.get(
-    '/users/todo/{todo_id}', 
+    '/users/todos/{todo_id}', 
     response_model=TodoOutput
 )
 async def get_todo(
@@ -85,8 +92,14 @@ async def get_todo(
     )
 ):
     user = await authorize(Authorization)
-    todo = models.Todo().get_todo(todo_id)
-    if todo['user_id'] != user['id']:
+    try:
+        todo = models.Todo().get_todo(todo_id) 
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
+    if not todo:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No todo with that id')
+    todo = todo['data']
+    if todo and todo['user_id'] != user['id']:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     todo.update({"creator": user})
     return  todo
@@ -97,19 +110,7 @@ async def get_todo(
     description='Get all Todos'
 )
 
-async def get_all_todos(
-    date: Optional[str]=Query(
-                            None, 
-                            description='Date created'
-                        ),
-    name: Optional[str]=Query(
-                            None, 
-                            description='Some part of the name'
-                        ),
-    complete: Optional[bool]=Query(
-                                None, 
-                                description='Is the tod completed or not'
-                            ),
+async def get_all_todos( 
     Authorization: str= Header(
         None, 
         description='Authorization is in form of Bearer &lt;token&gt; '\
@@ -118,13 +119,19 @@ async def get_all_todos(
 ):
     user = await authorize(Authorization)
     # get all todo
-    todos = models.Todo().get_todos(user['id'])
+    try:
+        todos = models.Todo().get_todos(user['id'])
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='User does not exist')
     # add user data
+    todos = [] if not todos else todos
     user.update({'todos': todos})
-    return todos
+    return user
 
 @app.put(
-    '/users/todo/{todo_id}', 
+    '/users/todos/{todo_id}', 
     response_model=TodoOutput
 )
 async def update_todo(
@@ -136,16 +143,19 @@ async def update_todo(
     )
 ):
     user = await authorize(Authorization)
-    todo = models.Todo().get_todo(todo_id)
-    if todo['user_id'] != user['id']:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-    todo = models.Todo().update_todo(todo_id, data)
+    try:
+        todo = models.Todo().get_todo(todo_id )
+        if todo['data']['user_id'] != user['id']:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        todo = models.Todo().update_todo(todo['ref'].id(), data.dict())
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
     todo.update({"creator": user})
     return  todo
 
 @app.delete(
-    '/users/todo/{todo_id}', 
-    response_model=TodoOutput
+    '/users/todos/{todo_id}', 
+    response_model=DeletedData
 )
 async def delete_todo(
     todo_id: str = Field(..., description='Id of the todo'),
@@ -155,9 +165,14 @@ async def delete_todo(
     )
 ):
     user = await authorize(Authorization)
-    todo = models.Todo().get_todo(todo_id)
-    if todo['user_id'] != user['id']:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
-    todo = models.Todo().delete_todo(todo_id)
-    todo.update({"creator": user})
-    return  todo
+    try:
+        todo = models.Todo().get_todo(todo_id)
+        if not todo:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='No todo with that id')
+            
+        if todo['data']['user_id'] != user['id']:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        todo = models.Todo().delete_todo(todo['ref'].value['id'])
+    except Exception as e:
+        raise HTTPException(400, detail=str(e))
+    return  {'message': 'Todo Deleted successfully'}

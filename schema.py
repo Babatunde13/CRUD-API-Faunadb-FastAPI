@@ -3,6 +3,9 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+class DeletedData(BaseModel):
+    message: str
+
 class User(BaseModel):
     '''
         Base User schema contains name and email

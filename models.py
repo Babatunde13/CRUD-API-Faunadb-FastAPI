@@ -1,16 +1,17 @@
 from faunadb import query as q
 from faunadb.client import FaunaClient
 from faunadb.objects import Ref
+from faunadb.errors import BadRequest, NotFound
 from dotenv  import load_dotenv
 from typing import Dict
-import os
+import os, secrets
 
 load_dotenv()
 
 client = FaunaClient(secret=os.getenv('FAUNA_SECRET'))
-# indexes = client.query(q.paginate(q.indexes()))
+indexes = client.query(q.paginate(q.indexes()))
 
-# print(indexes)
+print(indexes)
 
 class User:
     def __init__(self) -> None:
@@ -20,24 +21,27 @@ class User:
         new_data = client.query(
             q.create(
                 self.collection,
-                {'data': data}
+                {'data': {**data, 'id': secrets.token_hex(12)}}
             )
-        )
-        new_data['data']['id'] = new_data['ref'].value['id']
+        ) 
         return new_data['data']
 
     def get_user(self, id):
-        user = client.query(
-            q.get(
-                q.ref(q.collection('users'), id)
+        try:
+            user = client.query(
+                q.get(q.match(q.index('user_by_id'), id))
             )
-        )
+        except NotFound:
+            return None
         return None if user.get('errors') else user['data']
 
     def get_user_by_email(self, email):
-        user = client.query(
-            q.get(q.match(q.index('user_by_email'), email))
-        )
+        try:
+            user = client.query(
+                q.get(q.match(q.index('user_by_email'), email))
+            )
+        except NotFound:
+            return None
         return None if user.get('errors') else user['data']
 
 class Todo:
@@ -48,53 +52,45 @@ class Todo:
         new_todo = client.query(
             q.create(
                 self.collection,
-                {'data': {**data, 'user_id': user_id}}
+                {'data': {**data, 'user_id': user_id, 'id': secrets.token_hex(12)}}
             )
         )
-        new_todo['data']['id']=new_todo['ref'].value['id']
         return new_todo['data']
 
     def get_todo(self, id):
-        todo = client.query(
-            q.get(
-                q.ref(self.collection, id)
+        try:
+            todo = client.query(
+                q.get(q.match(q.index('todo_by_id'), id))
             )
-        )
-        return None if todo.get('errors') else todo['data']
+        except NotFound:
+            return None
+        return None if todo.get('errors') else todo 
  
     def get_todos(self, user_id):
-        # client.query(
-        #     q.map_(
-        #         q.paginate(q.match(q.index('todo_by_user_id'), user_id)),
-        #         q.lambda_('todo', q.get(q.var('todo')))
-        #     )
-        # )
-        todos =  client.query(
-            q.get(q.match(q.index('todo_by_user_id'), user_id))
-        ) 
-        return [
-            {
-                'id': todo['id'], 
-                'name': todo['name'], 
-                'is_completed': todo['is_completed']
-            } for todo in todos
-        ]
+        try:
+            todos=client.query(q.paginate(q.match(q.index("todo_by_user_id"), user_id)))
+            return [
+                        client.query(
+                            q.get(q.ref(q.collection("todos"), todo.id()))
+                        )['data']  
+                        for todo in todos['data']
+                    ] 
+        except NotFound:
+            return None  
 
     def update_todo(self, id, data):
-        return client.query(
-            q.update(
-                q.ref(self.collection, id),
-                {'data': data}
-            )
-        )['data']
+        try:
+            return client.query(
+                q.update(
+                    q.ref(q.collection("todos"), id),
+                    {'data': data}
+                )
+            )['data']
+        except NotFound:  
+            return 'Not found'
 
     def delete_todo(self, id):
-        data = client.query(
-            q.delete(
-                q.ref(self.collection, id)
-            )
-        )
-        return data['data']
-
-    def __repr__(self) -> str:
-        f''
+        try:
+            return client.query(q.delete(q.ref(q.collection("todos"), id)))['data']
+        except NotFound:
+            return None
